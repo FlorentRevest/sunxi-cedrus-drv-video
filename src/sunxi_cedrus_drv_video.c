@@ -471,6 +471,7 @@ static VAStatus sunxi_cedrus_allocate_buffer(VADriverContextP ctx, VAContextID c
 	struct v4l2_plane plane[1];
 
 	if(obj_buffer->type == VASliceDataBufferType) {
+		sunxi_cedrus_msg("allocate_buffer: SliceDataBuffer of size: %i\n", size);
 		object_context_p obj_context;
 
 		obj_context = CONTEXT(context);
@@ -697,6 +698,23 @@ VAStatus sunxi_cedrus_RenderPicture(VADriverContextP ctx, VAContextID context,
 			buf.m.planes[0].bytesused = obj_buffer->size;
 			buf.request = obj_surface->request;
 
+			obj_context->frame_hdr.slice_pos = 0;
+			obj_context->frame_hdr.slice_len = obj_buffer->size;
+			obj_context->frame_hdr.type = MPEG2;
+
+			struct v4l2_ext_control ctrl;
+			struct v4l2_ext_controls extCtrls;
+
+			ctrl.id = V4L2_CID_MPEG_VIDEO_VE_FRAME_HDR;
+			ctrl.ptr = &obj_context->frame_hdr;
+			ctrl.size = sizeof(obj_context->frame_hdr);
+
+			extCtrls.controls = &ctrl;
+			extCtrls.count = 1;
+			extCtrls.request = obj_surface->request;
+
+			assert(ioctl(driver_data->mem2mem_fd, VIDIOC_S_EXT_CTRLS, &extCtrls)==0);
+
 			assert(ioctl(driver_data->mem2mem_fd, VIDIOC_QBUF, &buf)==0);
 		} else if(obj_buffer->type == VAPictureParameterBufferType) {
 			VAPictureParameterBufferMPEG2 *pic_param = (VAPictureParameterBufferMPEG2 *)obj_buffer->buffer_data;
@@ -722,28 +740,13 @@ VAStatus sunxi_cedrus_RenderPicture(VADriverContextP ctx, VAContextID context,
 			object_surface_p fwd_surface = SURFACE(pic_param->forward_reference_picture);
 			if(fwd_surface)
 				obj_context->frame_hdr.backward_index = fwd_surface->buf_index;
+			else
+				obj_context->frame_hdr.backward_index = 0;
 			object_surface_p bwd_surface = SURFACE(pic_param->backward_reference_picture);
 			if(bwd_surface)
 				obj_context->frame_hdr.forward_index = bwd_surface->buf_index;
-		} else if(obj_buffer->type  == VASliceParameterBufferType) {
-			VASliceParameterBufferMPEG2 *slice_param = (VASliceParameterBufferMPEG2 *)obj_buffer->buffer_data;
-
-			obj_context->frame_hdr.slice_len = slice_param->slice_data_size;
-			obj_context->frame_hdr.slice_pos = slice_param->slice_data_offset;
-			obj_context->frame_hdr.type = MPEG2;
-
-			struct v4l2_ext_control ctrl;
-			struct v4l2_ext_controls extCtrls;
-
-			ctrl.id = V4L2_CID_MPEG_VIDEO_VE_FRAME_HDR;
-			ctrl.ptr = &obj_context->frame_hdr;
-			ctrl.size = sizeof(obj_context->frame_hdr);
-
-			extCtrls.controls = &ctrl;
-			extCtrls.count = 1;
-			extCtrls.request = obj_surface->request;
-
-			assert(ioctl(driver_data->mem2mem_fd, VIDIOC_S_EXT_CTRLS, &extCtrls)==0);
+			else
+				obj_context->frame_hdr.forward_index = 0;
 		}
 	}
 
@@ -914,7 +917,7 @@ VAStatus sunxi_cedrus_DeriveImage(VADriverContextP ctx, VASurfaceID surface,
 
 	image->num_planes = 2;
 	image->pitches[0] = (image->width+31)&~31;
-	image->pitches[1] = ((image->width+31)&~31)/2;
+	image->pitches[1] = (image->width+31)&~31;
 	image->offsets[0] = 0;
 	image->offsets[1] = sizeY;
 	image->data_size  = sizeY + sizeUV;
