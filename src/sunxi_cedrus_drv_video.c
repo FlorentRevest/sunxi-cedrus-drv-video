@@ -794,22 +794,32 @@ VAStatus sunxi_cedrus_SyncSurface(VADriverContextP ctx,
 	memset(&(buf), 0, sizeof(buf));
 	buf.type = V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE;
 	buf.memory = V4L2_MEMORY_MMAP;
-        buf.index = 0;
+	buf.index = obj_surface->buf_index;
 	buf.length = 1;
 	buf.m.planes = plane;
 
-	if(ioctl(driver_data->mem2mem_fd, VIDIOC_DQBUF, &buf))
+	if(ioctl(driver_data->mem2mem_fd, VIDIOC_DQBUF, &buf)) {
+		sunxi_cedrus_msg("ERROR\n");
 		return VA_STATUS_ERROR_UNKNOWN;
+	}
 
 	memset(&(buf), 0, sizeof(buf));
 	struct v4l2_plane planes[2];
 	buf.type = V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE;
 	buf.memory = V4L2_MEMORY_MMAP;
+	buf.index = obj_surface->buf_index;
 	buf.length = 2;
 	buf.m.planes = planes;
 
-	if(ioctl(driver_data->mem2mem_fd, VIDIOC_DQBUF, &buf))
+	if(ioctl(driver_data->mem2mem_fd, VIDIOC_DQBUF, &buf)) {
+		sunxi_cedrus_msg("ERROR\n");
 		return VA_STATUS_ERROR_UNKNOWN;
+	}
+
+	if(ioctl(driver_data->mem2mem_fd, VIDIOC_QBUF, &buf)) {
+		sunxi_cedrus_msg("ERROR\n");
+		return VA_STATUS_ERROR_UNKNOWN;
+	}
 
 	return VA_STATUS_SUCCESS;
 }
