@@ -758,6 +758,7 @@ VAStatus sunxi_cedrus_EndPicture(VADriverContextP ctx, VAContextID context)
 	VAStatus vaStatus = VA_STATUS_SUCCESS;
 	object_context_p obj_context;
 	object_surface_p obj_surface;
+	enum v4l2_buf_type type;
 
 	obj_context = CONTEXT(context);
 	assert(obj_context);
@@ -767,6 +768,12 @@ VAStatus sunxi_cedrus_EndPicture(VADriverContextP ctx, VAContextID context)
 
 	/* For now, assume that we are done with rendering right away */
 	obj_context->current_render_target = -1;
+
+	type = V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE;
+	assert(ioctl(driver_data->mem2mem_fd, VIDIOC_STREAMON, &type)==0);
+
+	type = V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE;
+	assert(ioctl(driver_data->mem2mem_fd, VIDIOC_STREAMON, &type)==0);
 
 	return vaStatus;
 }
@@ -778,13 +785,6 @@ VAStatus sunxi_cedrus_SyncSurface(VADriverContextP ctx,
 	object_surface_p obj_surface;
 	struct v4l2_buffer buf;
 	struct v4l2_plane plane[1];
-	enum v4l2_buf_type type;
-
-	type = V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE;
-	assert(ioctl(driver_data->mem2mem_fd, VIDIOC_STREAMON, &type)==0);
-
-	type = V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE;
-	assert(ioctl(driver_data->mem2mem_fd, VIDIOC_STREAMON, &type)==0);
 
 	usleep(500);
 
