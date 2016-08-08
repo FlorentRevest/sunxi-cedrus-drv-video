@@ -738,14 +738,14 @@ VAStatus sunxi_cedrus_RenderPicture(VADriverContextP ctx, VAContextID context,
 
 			object_surface_p fwd_surface = SURFACE(pic_param->forward_reference_picture);
 			if(fwd_surface)
-				obj_context->frame_hdr.backward_index = fwd_surface->buf_index;
-			else
-				obj_context->frame_hdr.backward_index = 0;
-			object_surface_p bwd_surface = SURFACE(pic_param->backward_reference_picture);
-			if(bwd_surface)
-				obj_context->frame_hdr.forward_index = bwd_surface->buf_index;
+				obj_context->frame_hdr.forward_index = fwd_surface->buf_index;
 			else
 				obj_context->frame_hdr.forward_index = 0;
+			object_surface_p bwd_surface = SURFACE(pic_param->backward_reference_picture);
+			if(bwd_surface)
+				obj_context->frame_hdr.backward_index = bwd_surface->buf_index;
+			else
+				obj_context->frame_hdr.backward_index = 0;
 		}
 	}
 
