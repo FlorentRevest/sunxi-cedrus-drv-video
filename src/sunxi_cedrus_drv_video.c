@@ -471,7 +471,6 @@ static VAStatus sunxi_cedrus_allocate_buffer(VADriverContextP ctx, VAContextID c
 	struct v4l2_plane plane[1];
 
 	if(obj_buffer->type == VASliceDataBufferType) {
-		sunxi_cedrus_msg("allocate_buffer: SliceDataBuffer of size: %i\n", size);
 		object_context_p obj_context;
 
 		obj_context = CONTEXT(context);
