@@ -801,10 +801,8 @@ VAStatus sunxi_cedrus_SyncSurface(VADriverContextP ctx,
 	buf.length = 1;
 	buf.m.planes = plane;
 
-	if(ioctl(driver_data->mem2mem_fd, VIDIOC_DQBUF, &buf)) {
-		sunxi_cedrus_msg("ERROR\n");
+	if(ioctl(driver_data->mem2mem_fd, VIDIOC_DQBUF, &buf))
 		return VA_STATUS_ERROR_UNKNOWN;
-	}
 
 	memset(&(buf), 0, sizeof(buf));
 	struct v4l2_plane planes[2];
@@ -814,15 +812,11 @@ VAStatus sunxi_cedrus_SyncSurface(VADriverContextP ctx,
 	buf.length = 2;
 	buf.m.planes = planes;
 
-	if(ioctl(driver_data->mem2mem_fd, VIDIOC_DQBUF, &buf)) {
-		sunxi_cedrus_msg("ERROR\n");
+	if(ioctl(driver_data->mem2mem_fd, VIDIOC_DQBUF, &buf))
 		return VA_STATUS_ERROR_UNKNOWN;
-	}
 
-	if(ioctl(driver_data->mem2mem_fd, VIDIOC_QBUF, &buf)) {
-		sunxi_cedrus_msg("ERROR\n");
+	if(ioctl(driver_data->mem2mem_fd, VIDIOC_QBUF, &buf))
 		return VA_STATUS_ERROR_UNKNOWN;
-	}
 
 	return VA_STATUS_SUCCESS;
 }
