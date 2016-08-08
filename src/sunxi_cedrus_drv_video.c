@@ -632,7 +632,7 @@ VAStatus sunxi_cedrus_BeginPicture(VADriverContextP ctx, VAContextID context,
 	obj_surface = SURFACE(render_target);
 	assert(obj_surface);
 
-	obj_surface->request = obj_context->num_rendered_surfaces+1;
+	obj_surface->request = (obj_context->num_rendered_surfaces+1)%INPUT_BUFFERS_NUMBER;
 	obj_surface->buf_index = obj_context->num_rendered_surfaces%INPUT_BUFFERS_NUMBER;
 	obj_context->num_rendered_surfaces ++;
 
