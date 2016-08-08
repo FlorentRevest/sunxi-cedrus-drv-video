@@ -937,10 +937,6 @@ VAStatus sunxi_cedrus_DeriveImage(VADriverContextP ctx, VASurfaceID surface,
 	tiled_to_planar(obj_surface->luma_buf, obj_buffer->buffer_data, image->pitches[0], image->width, image->height);
 	tiled_to_planar(obj_surface->chroma_buf, obj_buffer->buffer_data + sizeY, image->pitches[1], image->width, image->height/2);
 
-        FILE *fdl = fopen("frame_decoded","wb");
-        fwrite(obj_buffer->buffer_data,sizeY+sizeUV,1,fdl);
-        fclose(fdl);
-
 	return VA_STATUS_SUCCESS;
 }
 
