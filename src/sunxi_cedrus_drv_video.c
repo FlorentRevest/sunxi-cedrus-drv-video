@@ -786,7 +786,7 @@ VAStatus sunxi_cedrus_SyncSurface(VADriverContextP ctx,
 	struct v4l2_buffer buf;
 	struct v4l2_plane plane[1];
 
-	usleep(500);
+	// TODO: poll
 
 	obj_surface = SURFACE(render_target);
 	assert(obj_surface);
