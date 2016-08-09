@@ -321,6 +321,7 @@ VAStatus sunxi_cedrus_CreateSurfaces(VADriverContextP ctx, int width,
 
 		obj_surface->width = width;
 		obj_surface->height = height;
+		obj_surface->status = VASurfaceRendering;
 
 		assert(ioctl(driver_data->mem2mem_fd, VIDIOC_QBUF, &buf)==0);
 	}
@@ -812,6 +813,8 @@ VAStatus sunxi_cedrus_SyncSurface(VADriverContextP ctx,
 	buf.length = 2;
 	buf.m.planes = planes;
 
+	obj_surface->status = VASurfaceReady;
+
 	if(ioctl(driver_data->mem2mem_fd, VIDIOC_DQBUF, &buf))
 		return VA_STATUS_ERROR_UNKNOWN;
 
@@ -831,7 +834,7 @@ VAStatus sunxi_cedrus_QuerySurfaceStatus(VADriverContextP ctx,
 	obj_surface = SURFACE(render_target);
 	assert(obj_surface);
 
-	*status = VASurfaceReady;
+	*status = obj_surface->status;
 
 	return vaStatus;
 }

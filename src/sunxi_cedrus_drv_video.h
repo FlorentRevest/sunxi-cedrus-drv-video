@@ -101,6 +101,7 @@ struct object_surface {
 	uint32_t buf_index;
 	int width;
 	int height;
+	VAStatus status;
 };
 
 struct object_buffer {
