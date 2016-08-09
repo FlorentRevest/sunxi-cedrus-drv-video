@@ -52,7 +52,7 @@
 #define CONTEXT(id) ((object_context_p) object_heap_lookup(&driver_data->context_heap, id))
 #define SURFACE(id) ((object_surface_p) object_heap_lookup(&driver_data->surface_heap, id))
 #define BUFFER(id)  ((object_buffer_p) object_heap_lookup(&driver_data->buffer_heap, id))
-#define IMAGE(id)   ((VAImageID) object_heap_lookup(&driver_data->image_heap, id))
+#define IMAGE(id)   ((object_image_p) object_heap_lookup(&driver_data->image_heap, id))
 
 #define CONFIG_ID_OFFSET		0x01000000
 #define CONTEXT_ID_OFFSET		0x02000000
@@ -899,24 +899,14 @@ VAStatus sunxi_cedrus_QueryImageFormats(VADriverContextP ctx,
 VAStatus sunxi_cedrus_CreateImage(VADriverContextP ctx, VAImageFormat *format,
 		int width, int height, VAImage *image)
 {
-	return VA_STATUS_SUCCESS;
-}
-
-VAStatus sunxi_cedrus_DeriveImage(VADriverContextP ctx, VASurfaceID surface,
-		VAImage *image)
-{
 	INIT_DRIVER_DATA
-	object_surface_p obj_surface;
 	int sizeY, sizeUV;
-	VAImageFormat fmt;
-	object_buffer_p obj_buffer;
+	object_image_p obj_img;
 
-	obj_surface = SURFACE(surface);
-	fmt.fourcc = VA_FOURCC_NV12;
-	image->format = fmt;
+	image->format = *format;
 	image->buf = VA_INVALID_ID;
-	image->width = obj_surface->width;
-	image->height = obj_surface->height;
+	image->width = width;
+	image->height = height;
 
 	sizeY    = image->width * image->height;
 	sizeUV   = ((image->width+1) * (image->height+1)/2);
@@ -931,23 +921,54 @@ VAStatus sunxi_cedrus_DeriveImage(VADriverContextP ctx, VASurfaceID surface,
 	image->image_id = object_heap_allocate(&driver_data->image_heap);
 	if (image->image_id == VA_INVALID_ID)
 		return VA_STATUS_ERROR_ALLOCATION_FAILED;
+	obj_img = IMAGE(image->image_id);
 
 	if (sunxi_cedrus_CreateBuffer(ctx, 0, VAImageBufferType, image->data_size, 
 	    1, NULL, &image->buf) != VA_STATUS_SUCCESS)
 		return VA_STATUS_ERROR_ALLOCATION_FAILED;
+	obj_img->buf = image->buf;
+
+	return VA_STATUS_SUCCESS;
+}
+
+VAStatus sunxi_cedrus_DeriveImage(VADriverContextP ctx, VASurfaceID surface,
+		VAImage *image)
+{
+	INIT_DRIVER_DATA
+	object_surface_p obj_surface;
+	VAImageFormat fmt;
+	object_buffer_p obj_buffer;
+	VAStatus ret;
+
+	obj_surface = SURFACE(surface);
+	fmt.fourcc = VA_FOURCC_NV12;
+
+	ret = sunxi_cedrus_CreateImage(ctx, &fmt, obj_surface->width,
+			obj_surface->height, image);
+	if(ret != VA_STATUS_SUCCESS)
+		return ret;
 
 	obj_buffer = BUFFER(image->buf);
 	if (NULL == obj_buffer)
 		return VA_STATUS_ERROR_ALLOCATION_FAILED;
 
 	tiled_to_planar(obj_surface->luma_buf, obj_buffer->buffer_data, image->pitches[0], image->width, image->height);
-	tiled_to_planar(obj_surface->chroma_buf, obj_buffer->buffer_data + sizeY, image->pitches[1], image->width, image->height/2);
+	tiled_to_planar(obj_surface->chroma_buf, obj_buffer->buffer_data + image->width*image->height, image->pitches[1], image->width, image->height/2);
 
 	return VA_STATUS_SUCCESS;
 }
 
 VAStatus sunxi_cedrus_DestroyImage(VADriverContextP ctx, VAImageID image)
-{ return VA_STATUS_SUCCESS; }
+{
+	INIT_DRIVER_DATA
+	object_image_p obj_img;
+
+	obj_img = IMAGE(image);
+	assert(obj_img);
+
+	sunxi_cedrus_DestroyBuffer(ctx, obj_img->buf);
+	return VA_STATUS_SUCCESS;
+}
 
 VAStatus sunxi_cedrus_SetImagePalette(VADriverContextP ctx, VAImageID image,
 		unsigned char *palette)
@@ -1152,7 +1173,7 @@ VAStatus VA_DRIVER_INIT_FUNC(VADriverContextP ctx)
 	assert(object_heap_init(&driver_data->context_heap, sizeof(struct object_context), CONTEXT_ID_OFFSET)==0);
 	assert(object_heap_init(&driver_data->surface_heap, sizeof(struct object_surface), SURFACE_ID_OFFSET)==0);
 	assert(object_heap_init(&driver_data->buffer_heap, sizeof(struct object_buffer), BUFFER_ID_OFFSET)==0);
-	assert(object_heap_init(&driver_data->image_heap, sizeof(struct object_buffer), IMAGE_ID_OFFSET)==0);
+	assert(object_heap_init(&driver_data->image_heap, sizeof(struct object_image), IMAGE_ID_OFFSET)==0);
 
 	driver_data->mem2mem_fd = open("/dev/video0", O_RDWR | O_NONBLOCK, 0);
 	assert(driver_data->mem2mem_fd >= 0);

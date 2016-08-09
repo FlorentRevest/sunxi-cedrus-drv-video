@@ -112,9 +112,15 @@ struct object_buffer {
 	unsigned int size;
 };
 
+struct object_image {
+	struct object_base base;
+	VABufferID buf;
+};
+
 typedef struct object_config *object_config_p;
 typedef struct object_context *object_context_p;
 typedef struct object_surface *object_surface_p;
 typedef struct object_buffer *object_buffer_p;
+typedef struct object_image *object_image_p;
 
 #endif /* _SUNXI_CEDRUS_DRV_VIDEO_H_ */
