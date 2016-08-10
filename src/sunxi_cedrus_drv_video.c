@@ -263,9 +263,9 @@ VAStatus sunxi_cedrus_CreateSurfaces(VADriverContextP ctx, int width,
 	INIT_DRIVER_DATA
 	VAStatus vaStatus = VA_STATUS_SUCCESS;
 	int i;
-	struct v4l2_requestbuffers reqbuf;
 	struct v4l2_buffer buf;
 	struct v4l2_plane planes[2];
+	struct v4l2_create_buffers create_bufs;
 	struct v4l2_format fmt;
 
 	/* We only support one format */
@@ -282,11 +282,12 @@ VAStatus sunxi_cedrus_CreateSurfaces(VADriverContextP ctx, int width,
 	fmt.fmt.pix_mp.num_planes = 2;
 	assert(ioctl(driver_data->mem2mem_fd, VIDIOC_S_FMT, &fmt)==0);
 
-	memset(&(reqbuf), 0, sizeof(reqbuf));
-	reqbuf.count = num_surfaces;
-	reqbuf.type = V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE;
-	reqbuf.memory = V4L2_MEMORY_MMAP;
-	assert(ioctl(driver_data->mem2mem_fd, VIDIOC_REQBUFS, &reqbuf)==0);
+	memset (&create_bufs, 0, sizeof (struct v4l2_create_buffers));
+	create_bufs.count = num_surfaces;
+	create_bufs.memory = V4L2_MEMORY_MMAP;
+	create_bufs.format.type = V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE;
+	assert(ioctl(driver_data->mem2mem_fd, VIDIOC_G_FMT, &create_bufs.format)==0);
+	assert(ioctl(driver_data->mem2mem_fd, VIDIOC_CREATE_BUFS, &create_bufs)==0);
 
 	for (i = 0; i < num_surfaces; i++)
 	{
@@ -303,7 +304,7 @@ VAStatus sunxi_cedrus_CreateSurfaces(VADriverContextP ctx, int width,
 		memset(&(buf), 0, sizeof(buf));
 		buf.type = V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE;
 		buf.memory = V4L2_MEMORY_MMAP;
-		buf.index = i;
+		buf.index = create_bufs.index + i;
 		buf.length = 2;
 		buf.m.planes = planes;
 
@@ -365,7 +366,7 @@ VAStatus sunxi_cedrus_CreateContext(VADriverContextP ctx, VAConfigID config_id,
 	VAStatus vaStatus = VA_STATUS_SUCCESS;
 	object_config_p obj_config;
 	int i;
-	struct v4l2_requestbuffers reqbuf;
+	struct v4l2_create_buffers create_bufs;
 	struct v4l2_format fmt;
 
 	obj_config = CONFIG(config_id);
@@ -432,12 +433,12 @@ VAStatus sunxi_cedrus_CreateContext(VADriverContextP ctx, VAConfigID config_id,
 	fmt.fmt.pix_mp.num_planes = 1;
 	assert(ioctl(driver_data->mem2mem_fd, VIDIOC_S_FMT, &fmt)==0);
 
-	/* Request */
-	memset(&(reqbuf), 0, sizeof(reqbuf));
-	reqbuf.count = INPUT_BUFFERS_NUMBER;
-	reqbuf.type = V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE;
-	reqbuf.memory = V4L2_MEMORY_MMAP;
-	assert(ioctl(driver_data->mem2mem_fd, VIDIOC_REQBUFS, &reqbuf)==0);
+	memset (&create_bufs, 0, sizeof (struct v4l2_create_buffers));
+	create_bufs.count = INPUT_BUFFERS_NUMBER;
+	create_bufs.memory = V4L2_MEMORY_MMAP;
+	create_bufs.format.type = V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE;
+	assert(ioctl(driver_data->mem2mem_fd, VIDIOC_G_FMT, &create_bufs.format)==0);
+	assert(ioctl(driver_data->mem2mem_fd, VIDIOC_CREATE_BUFS, &create_bufs)==0);
 
 	return vaStatus;
 }
