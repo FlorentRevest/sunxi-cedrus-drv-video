@@ -329,19 +329,22 @@ VAStatus sunxi_cedrus_CreateSurfaces(VADriverContextP ctx, int width,
 
 		assert(ioctl(driver_data->mem2mem_fd, VIDIOC_QUERYBUF, &buf)==0);
 
-		obj_surface->luma_buf = mmap(NULL, buf.m.planes[0].length,
+		driver_data->luma_bufs[buf.index] = mmap(NULL, buf.m.planes[0].length,
 				PROT_READ | PROT_WRITE, MAP_SHARED,
 				driver_data->mem2mem_fd, buf.m.planes[0].m.mem_offset);
-		assert(obj_surface->luma_buf != MAP_FAILED);
+		assert(driver_data->luma_bufs[buf.index] != MAP_FAILED);
 
-		obj_surface->chroma_buf = mmap(NULL, buf.m.planes[1].length,
+		driver_data->chroma_bufs[buf.index] = mmap(NULL, buf.m.planes[1].length,
 				PROT_READ | PROT_WRITE, MAP_SHARED,
 				driver_data->mem2mem_fd, buf.m.planes[1].m.mem_offset);
-		assert(obj_surface->chroma_buf != MAP_FAILED);
+		assert(driver_data->chroma_bufs[buf.index] != MAP_FAILED);
+
+		obj_surface->input_buf_index = 0;
+		obj_surface->output_buf_index = 0;
 
 		obj_surface->width = width;
 		obj_surface->height = height;
-		obj_surface->status = VASurfaceRendering;
+		obj_surface->status = VASurfaceReady;
 
 		assert(ioctl(driver_data->mem2mem_fd, VIDIOC_QBUF, &buf)==0);
 	}
@@ -653,10 +656,14 @@ VAStatus sunxi_cedrus_BeginPicture(VADriverContextP ctx, VAContextID context,
 	obj_surface = SURFACE(render_target);
 	assert(obj_surface);
 
-	obj_surface->request = (obj_context->num_rendered_surfaces+1)%INPUT_BUFFERS_NUMBER;
-	obj_surface->buf_index = obj_context->num_rendered_surfaces%INPUT_BUFFERS_NUMBER;
-	obj_context->num_rendered_surfaces ++;
+	if(obj_surface->status == VASurfaceRendering)
+		sunxi_cedrus_SyncSurface(ctx, render_target);
 
+	obj_surface->status = VASurfaceRendering;
+	obj_surface->request = (obj_context->num_rendered_surfaces)%INPUT_BUFFERS_NUMBER+1;
+	obj_surface->input_buf_index = obj_context->num_rendered_surfaces%INPUT_BUFFERS_NUMBER;
+	obj_surface->output_buf_index = obj_context->num_rendered_surfaces%4;
+	obj_context->num_rendered_surfaces ++;
 
 	obj_context->current_render_target = obj_surface->base.id;
 
@@ -696,7 +703,7 @@ VAStatus sunxi_cedrus_RenderPicture(VADriverContextP ctx, VAContextID context,
 			memset(&(buf), 0, sizeof(buf));
 			buf.type = V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE;
 			buf.memory = V4L2_MEMORY_MMAP;
-			buf.index = obj_surface->buf_index;
+			buf.index = obj_surface->input_buf_index;
 			buf.length = 1;
 			buf.m.planes = plane;
 
@@ -712,7 +719,7 @@ VAStatus sunxi_cedrus_RenderPicture(VADriverContextP ctx, VAContextID context,
 			memset(&(buf), 0, sizeof(buf));
 			buf.type = V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE;
 			buf.memory = V4L2_MEMORY_MMAP;
-			buf.index = obj_surface->buf_index;
+			buf.index = obj_surface->input_buf_index;
 			buf.length = 1;
 			buf.m.planes = plane;
 			buf.m.planes[0].bytesused = obj_buffer->size;
@@ -759,14 +766,14 @@ VAStatus sunxi_cedrus_RenderPicture(VADriverContextP ctx, VAContextID context,
 
 			object_surface_p fwd_surface = SURFACE(pic_param->forward_reference_picture);
 			if(fwd_surface)
-				obj_context->frame_hdr.forward_index = fwd_surface->buf_index;
+				obj_context->frame_hdr.forward_index = fwd_surface->output_buf_index;
 			else
-				obj_context->frame_hdr.forward_index = 0;
+				obj_context->frame_hdr.forward_index = obj_surface->output_buf_index;
 			object_surface_p bwd_surface = SURFACE(pic_param->backward_reference_picture);
 			if(bwd_surface)
-				obj_context->frame_hdr.backward_index = bwd_surface->buf_index;
+				obj_context->frame_hdr.backward_index = bwd_surface->output_buf_index;
 			else
-				obj_context->frame_hdr.backward_index = 0;
+				obj_context->frame_hdr.backward_index = obj_surface->output_buf_index;
 		}
 	}
 
@@ -818,7 +825,7 @@ VAStatus sunxi_cedrus_SyncSurface(VADriverContextP ctx,
 	memset(&(buf), 0, sizeof(buf));
 	buf.type = V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE;
 	buf.memory = V4L2_MEMORY_MMAP;
-	buf.index = obj_surface->buf_index;
+	buf.index = obj_surface->input_buf_index;
 	buf.length = 1;
 	buf.m.planes = plane;
 
@@ -829,7 +836,7 @@ VAStatus sunxi_cedrus_SyncSurface(VADriverContextP ctx,
 	struct v4l2_plane planes[2];
 	buf.type = V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE;
 	buf.memory = V4L2_MEMORY_MMAP;
-	buf.index = obj_surface->buf_index;
+	buf.index = obj_surface->output_buf_index;
 	buf.length = 2;
 	buf.m.planes = planes;
 
@@ -897,7 +904,7 @@ VAStatus sunxi_cedrus_PutSurface(VADriverContextP ctx, VASurfaceID surface,
 
 	for(x=destx; x < destx+destw; x++) {
 		for(y=desty; y < desty+desth; y++) {
-			char lum = obj_surface->luma_buf[x+srcw*y];
+			char lum = driver_data->luma_bufs[obj_surface->output_buf_index][x+srcw*y];
 			xcolor.red = xcolor.green = xcolor.blue = lum*colorratio;
 			XAllocColor(display, cm, &xcolor);
 			XSetForeground(display, gc, xcolor.pixel);
@@ -975,8 +982,8 @@ VAStatus sunxi_cedrus_DeriveImage(VADriverContextP ctx, VASurfaceID surface,
 	if (NULL == obj_buffer)
 		return VA_STATUS_ERROR_ALLOCATION_FAILED;
 
-	tiled_to_planar(obj_surface->luma_buf, obj_buffer->buffer_data, image->pitches[0], image->width, image->height);
-	tiled_to_planar(obj_surface->chroma_buf, obj_buffer->buffer_data + image->width*image->height, image->pitches[1], image->width, image->height/2);
+	tiled_to_planar(driver_data->luma_bufs[obj_surface->output_buf_index], obj_buffer->buffer_data, image->pitches[0], image->width, image->height);
+	tiled_to_planar(driver_data->chroma_bufs[obj_surface->output_buf_index], obj_buffer->buffer_data + image->width*image->height, image->pitches[1], image->width, image->height/2);
 
 	return VA_STATUS_SUCCESS;
 }

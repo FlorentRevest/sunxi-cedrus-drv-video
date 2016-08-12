@@ -67,6 +67,8 @@ struct sunxi_cedrus_driver_data {
 	struct object_heap	surface_heap;
 	struct object_heap	buffer_heap;
 	struct object_heap	image_heap;
+	char                   *luma_bufs[VIDEO_MAX_FRAME];
+	char                   *chroma_bufs[VIDEO_MAX_FRAME];
 	int			mem2mem_fd;
 };
 
@@ -95,10 +97,9 @@ struct object_context {
 struct object_surface {
 	struct object_base base;
 	VASurfaceID surface_id;
-	char *luma_buf;
-	char *chroma_buf;
 	uint32_t request;
-	uint32_t buf_index;
+	uint32_t input_buf_index;
+	uint32_t output_buf_index;
 	int width;
 	int height;
 	VAStatus status;
