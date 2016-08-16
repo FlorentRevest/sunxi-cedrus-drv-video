@@ -37,30 +37,6 @@
 #define SUNXI_CEDRUS_MAX_DISPLAY_ATTRIBUTES		4
 #define SUNXI_CEDRUS_STR_VENDOR				"Sunxi Cedrus Driver 1.0"
 
-struct v4l2_ctrl_ve_frame_hdr {
-	__u32 slice_len;
-	__u32 slice_pos;
-	enum { MPEG1, MPEG2 } type;
-
-	__u16 width;
-	__u16 height;
-
-	enum { PCT_I = 1, PCT_P, PCT_B, PCT_D } picture_coding_type;
-	__u8 f_code[2][2];
-
-	__u8 intra_dc_precision;
-	__u8 picture_structure;
-	__u8 top_field_first;
-	__u8 frame_pred_frame_dct;
-	__u8 concealment_motion_vectors;
-	__u8 q_scale_type;
-	__u8 intra_vlc_format;
-	__u8 alternate_scan;
-
-	__u8 backward_index;
-	__u8 forward_index;
-};
-
 struct sunxi_cedrus_driver_data {
 	struct object_heap	config_heap;
 	struct object_heap	context_heap;
@@ -90,7 +66,8 @@ struct object_context {
 	int num_render_targets;
 	int flags;
 	VASurfaceID *render_targets;
-	struct v4l2_ctrl_ve_frame_hdr frame_hdr;
+	struct v4l2_ctrl_mpeg2_frame_hdr mpeg2_frame_hdr;
+	struct v4l2_ctrl_mpeg4_frame_hdr mpeg4_frame_hdr;
 	uint32_t num_rendered_surfaces;
 };
 

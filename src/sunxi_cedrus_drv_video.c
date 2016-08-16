@@ -44,8 +44,6 @@
 #include <X11/Xlib.h>
 
 #include <linux/videodev2.h>
-#define V4L2_PIX_FMT_VE_FRAME  v4l2_fourcc('V', 'E', '0', 'F')
-#define V4L2_CID_MPEG_VIDEO_VE_FRAME_HDR	V4L2_CID_MPEG_BASE+450
 
 #define INIT_DRIVER_DATA	struct sunxi_cedrus_driver_data * const driver_data = (struct sunxi_cedrus_driver_data *) ctx->pDriverData;
 #define CONFIG(id)  ((object_config_p) object_heap_lookup(&driver_data->config_heap, id))
@@ -447,13 +445,33 @@ VAStatus sunxi_cedrus_CreateContext(VADriverContextP ctx, VAConfigID config_id,
 		obj_context->flags = 0;
 		object_heap_free(&driver_data->context_heap, (object_base_p) obj_context);
 	}
-	memset(&(fmt), 0, sizeof(fmt));
-	fmt.type = V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE;
-	fmt.fmt.pix_mp.plane_fmt[0].sizeimage = INPUT_BUFFER_MAX_SIZE;
-	fmt.fmt.pix_mp.pixelformat = V4L2_PIX_FMT_VE_FRAME;
-	fmt.fmt.pix_mp.field = V4L2_FIELD_ANY;
-	fmt.fmt.pix_mp.num_planes = 1;
-	assert(ioctl(driver_data->mem2mem_fd, VIDIOC_S_FMT, &fmt)==0);
+
+	switch(obj_config->profile) {
+		case VAProfileMPEG2Simple:
+		case VAProfileMPEG2Main:
+			memset(&(fmt), 0, sizeof(fmt));
+			fmt.type = V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE;
+			fmt.fmt.pix_mp.plane_fmt[0].sizeimage = INPUT_BUFFER_MAX_SIZE;
+			fmt.fmt.pix_mp.pixelformat = V4L2_PIX_FMT_MPEG2_FRAME;
+			fmt.fmt.pix_mp.field = V4L2_FIELD_ANY;
+			fmt.fmt.pix_mp.num_planes = 1;
+			assert(ioctl(driver_data->mem2mem_fd, VIDIOC_S_FMT, &fmt)==0);
+			break;
+		case VAProfileMPEG4Simple:
+		case VAProfileMPEG4AdvancedSimple:
+		case VAProfileMPEG4Main:
+			memset(&(fmt), 0, sizeof(fmt));
+			fmt.type = V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE;
+			fmt.fmt.pix_mp.plane_fmt[0].sizeimage = INPUT_BUFFER_MAX_SIZE;
+			fmt.fmt.pix_mp.pixelformat = V4L2_PIX_FMT_MPEG4_FRAME;
+			fmt.fmt.pix_mp.field = V4L2_FIELD_ANY;
+			fmt.fmt.pix_mp.num_planes = 1;
+			assert(ioctl(driver_data->mem2mem_fd, VIDIOC_S_FMT, &fmt)==0);
+			break;
+		default:
+			vaStatus = VA_STATUS_ERROR_UNSUPPORTED_PROFILE;
+			break;
+	}
 
 	memset (&create_bufs, 0, sizeof (struct v4l2_create_buffers));
 	create_bufs.count = INPUT_BUFFERS_NUMBER;
@@ -670,6 +688,169 @@ VAStatus sunxi_cedrus_BeginPicture(VADriverContextP ctx, VAContextID context,
 	return vaStatus;
 }
 
+VAStatus sunxi_cedrus_render_mpeg2_slice_data(VADriverContextP ctx, object_context_p obj_context, 
+		object_surface_p obj_surface, object_buffer_p obj_buffer)
+{
+	INIT_DRIVER_DATA
+	VAStatus vaStatus = VA_STATUS_SUCCESS;
+	struct v4l2_buffer buf;
+	struct v4l2_plane plane[1];
+
+	/* Query */
+	memset(&(buf), 0, sizeof(buf));
+	buf.type = V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE;
+	buf.memory = V4L2_MEMORY_MMAP;
+	buf.index = obj_surface->input_buf_index;
+	buf.length = 1;
+	buf.m.planes = plane;
+
+	assert(ioctl(driver_data->mem2mem_fd, VIDIOC_QUERYBUF, &buf)==0);
+
+	/* Populate frame */
+	char *src_buf = mmap(NULL, obj_buffer->size,
+			PROT_READ | PROT_WRITE, MAP_SHARED,
+			driver_data->mem2mem_fd, buf.m.planes[0].m.mem_offset);
+	assert(src_buf != MAP_FAILED);
+	memcpy(src_buf, obj_buffer->buffer_data, obj_buffer->size);
+
+	memset(&(buf), 0, sizeof(buf));
+	buf.type = V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE;
+	buf.memory = V4L2_MEMORY_MMAP;
+	buf.index = obj_surface->input_buf_index;
+	buf.length = 1;
+	buf.m.planes = plane;
+	buf.m.planes[0].bytesused = obj_buffer->size;
+	buf.request = obj_surface->request;
+
+	obj_context->mpeg2_frame_hdr.slice_pos = 0;
+	obj_context->mpeg2_frame_hdr.slice_len = obj_buffer->size;
+	obj_context->mpeg2_frame_hdr.type = MPEG2;
+
+	struct v4l2_ext_control ctrl;
+	struct v4l2_ext_controls extCtrls;
+
+	ctrl.id = V4L2_CID_MPEG_VIDEO_MPEG2_FRAME_HDR;
+	ctrl.ptr = &obj_context->mpeg2_frame_hdr;
+	ctrl.size = sizeof(obj_context->mpeg2_frame_hdr);
+
+	extCtrls.controls = &ctrl;
+	extCtrls.count = 1;
+	extCtrls.request = obj_surface->request;
+
+	assert(ioctl(driver_data->mem2mem_fd, VIDIOC_S_EXT_CTRLS, &extCtrls)==0);
+
+	assert(ioctl(driver_data->mem2mem_fd, VIDIOC_QBUF, &buf)==0);
+
+	return vaStatus;
+}
+
+VAStatus sunxi_cedrus_render_mpeg2_picture_parameter(VADriverContextP ctx, object_context_p obj_context, 
+		object_surface_p obj_surface, object_buffer_p obj_buffer)
+{
+	INIT_DRIVER_DATA
+	VAStatus vaStatus = VA_STATUS_SUCCESS;
+
+	VAPictureParameterBufferMPEG2 *pic_param = (VAPictureParameterBufferMPEG2 *)obj_buffer->buffer_data;
+
+	obj_context->mpeg2_frame_hdr.width = pic_param->horizontal_size;
+	obj_context->mpeg2_frame_hdr.height = pic_param->vertical_size;
+
+	obj_context->mpeg2_frame_hdr.picture_coding_type = pic_param->picture_coding_type;
+	obj_context->mpeg2_frame_hdr.f_code[0][0] = (pic_param->f_code >> 12) & 0xf;
+	obj_context->mpeg2_frame_hdr.f_code[0][1] = (pic_param->f_code >>  8) & 0xf;
+	obj_context->mpeg2_frame_hdr.f_code[1][0] = (pic_param->f_code >>  4) & 0xf;
+	obj_context->mpeg2_frame_hdr.f_code[1][1] = pic_param->f_code & 0xf;
+
+	obj_context->mpeg2_frame_hdr.intra_dc_precision = pic_param->picture_coding_extension.bits.intra_dc_precision;
+	obj_context->mpeg2_frame_hdr.picture_structure = pic_param->picture_coding_extension.bits.picture_structure;
+	obj_context->mpeg2_frame_hdr.top_field_first = pic_param->picture_coding_extension.bits.top_field_first;
+	obj_context->mpeg2_frame_hdr.frame_pred_frame_dct = pic_param->picture_coding_extension.bits.frame_pred_frame_dct;
+	obj_context->mpeg2_frame_hdr.concealment_motion_vectors = pic_param->picture_coding_extension.bits.concealment_motion_vectors;
+	obj_context->mpeg2_frame_hdr.q_scale_type = pic_param->picture_coding_extension.bits.q_scale_type;
+	obj_context->mpeg2_frame_hdr.intra_vlc_format = pic_param->picture_coding_extension.bits.intra_vlc_format;
+	obj_context->mpeg2_frame_hdr.alternate_scan = pic_param->picture_coding_extension.bits.alternate_scan;
+
+	object_surface_p fwd_surface = SURFACE(pic_param->forward_reference_picture);
+	if(fwd_surface)
+		obj_context->mpeg2_frame_hdr.forward_index = fwd_surface->output_buf_index;
+	else
+		obj_context->mpeg2_frame_hdr.forward_index = obj_surface->output_buf_index;
+	object_surface_p bwd_surface = SURFACE(pic_param->backward_reference_picture);
+	if(bwd_surface)
+		obj_context->mpeg2_frame_hdr.backward_index = bwd_surface->output_buf_index;
+	else
+		obj_context->mpeg2_frame_hdr.backward_index = obj_surface->output_buf_index;
+
+	return vaStatus;
+}
+
+VAStatus sunxi_cedrus_render_mpeg4_slice_data(VADriverContextP ctx, object_context_p obj_context, 
+		object_surface_p obj_surface, object_buffer_p obj_buffer)
+{
+	INIT_DRIVER_DATA
+	VAStatus vaStatus = VA_STATUS_SUCCESS;
+	struct v4l2_buffer buf;
+	struct v4l2_plane plane[1];
+
+	/* Query */
+	memset(&(buf), 0, sizeof(buf));
+	buf.type = V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE;
+	buf.memory = V4L2_MEMORY_MMAP;
+	buf.index = obj_surface->input_buf_index;
+	buf.length = 1;
+	buf.m.planes = plane;
+
+	assert(ioctl(driver_data->mem2mem_fd, VIDIOC_QUERYBUF, &buf)==0);
+
+	/* Populate frame */
+	char *src_buf = mmap(NULL, obj_buffer->size,
+			PROT_READ | PROT_WRITE, MAP_SHARED,
+			driver_data->mem2mem_fd, buf.m.planes[0].m.mem_offset);
+	assert(src_buf != MAP_FAILED);
+	memcpy(src_buf, obj_buffer->buffer_data, obj_buffer->size);
+
+	memset(&(buf), 0, sizeof(buf));
+	buf.type = V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE;
+	buf.memory = V4L2_MEMORY_MMAP;
+	buf.index = obj_surface->input_buf_index;
+	buf.length = 1;
+	buf.m.planes = plane;
+	buf.m.planes[0].bytesused = obj_buffer->size;
+	buf.request = obj_surface->request;
+
+/*	obj_context->mpeg4_frame_hdr.slice_pos = 0;
+	obj_context->mpeg4_frame_hdr.slice_len = obj_buffer->size; */
+
+	struct v4l2_ext_control ctrl;
+	struct v4l2_ext_controls extCtrls;
+
+	ctrl.id = V4L2_CID_MPEG_VIDEO_MPEG4_FRAME_HDR;
+	ctrl.ptr = &obj_context->mpeg4_frame_hdr;
+	ctrl.size = sizeof(obj_context->mpeg4_frame_hdr);
+
+	extCtrls.controls = &ctrl;
+	extCtrls.count = 1;
+	extCtrls.request = obj_surface->request;
+
+	assert(ioctl(driver_data->mem2mem_fd, VIDIOC_S_EXT_CTRLS, &extCtrls)==0);
+
+	assert(ioctl(driver_data->mem2mem_fd, VIDIOC_QBUF, &buf)==0);
+
+	return vaStatus;
+}
+
+VAStatus sunxi_cedrus_render_mpeg4_picture_parameter(VADriverContextP ctx, object_context_p obj_context, 
+		object_surface_p obj_surface, object_buffer_p obj_buffer)
+{
+	INIT_DRIVER_DATA
+	VAStatus vaStatus = VA_STATUS_SUCCESS;
+
+	VAPictureParameterBufferMPEG4 *pic_param = (VAPictureParameterBufferMPEG4 *)obj_buffer->buffer_data;
+
+
+	return vaStatus;
+}
+
 VAStatus sunxi_cedrus_RenderPicture(VADriverContextP ctx, VAContextID context,
 		VABufferID *buffers, int num_buffers)
 {
@@ -677,12 +858,18 @@ VAStatus sunxi_cedrus_RenderPicture(VADriverContextP ctx, VAContextID context,
 	VAStatus vaStatus = VA_STATUS_SUCCESS;
 	object_context_p obj_context;
 	object_surface_p obj_surface;
+	object_config_p obj_config;
 	int i;
-	struct v4l2_buffer buf;
-	struct v4l2_plane plane[1];
 
 	obj_context = CONTEXT(context);
 	assert(obj_context);
+
+	obj_config = CONFIG(obj_context->config_id);
+	if (NULL == obj_config)
+	{
+		vaStatus = VA_STATUS_ERROR_INVALID_CONFIG;
+		return vaStatus;
+	}
 
 	obj_surface = SURFACE(obj_context->current_render_target);
 	assert(obj_surface);
@@ -698,83 +885,26 @@ VAStatus sunxi_cedrus_RenderPicture(VADriverContextP ctx, VAContextID context,
 			break;
 		}
 
-		if(obj_buffer->type == VASliceDataBufferType) {
-			/* Query */
-			memset(&(buf), 0, sizeof(buf));
-			buf.type = V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE;
-			buf.memory = V4L2_MEMORY_MMAP;
-			buf.index = obj_surface->input_buf_index;
-			buf.length = 1;
-			buf.m.planes = plane;
-
-			assert(ioctl(driver_data->mem2mem_fd, VIDIOC_QUERYBUF, &buf)==0);
-
-			/* Populate frame */
-			char *src_buf = mmap(NULL, obj_buffer->size,
-					PROT_READ | PROT_WRITE, MAP_SHARED,
-					driver_data->mem2mem_fd, buf.m.planes[0].m.mem_offset);
-			assert(src_buf != MAP_FAILED);
-			memcpy(src_buf, obj_buffer->buffer_data, obj_buffer->size);
-
-			memset(&(buf), 0, sizeof(buf));
-			buf.type = V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE;
-			buf.memory = V4L2_MEMORY_MMAP;
-			buf.index = obj_surface->input_buf_index;
-			buf.length = 1;
-			buf.m.planes = plane;
-			buf.m.planes[0].bytesused = obj_buffer->size;
-			buf.request = obj_surface->request;
-
-			obj_context->frame_hdr.slice_pos = 0;
-			obj_context->frame_hdr.slice_len = obj_buffer->size;
-			obj_context->frame_hdr.type = MPEG2;
-
-			struct v4l2_ext_control ctrl;
-			struct v4l2_ext_controls extCtrls;
-
-			ctrl.id = V4L2_CID_MPEG_VIDEO_VE_FRAME_HDR;
-			ctrl.ptr = &obj_context->frame_hdr;
-			ctrl.size = sizeof(obj_context->frame_hdr);
-
-			extCtrls.controls = &ctrl;
-			extCtrls.count = 1;
-			extCtrls.request = obj_surface->request;
-
-			assert(ioctl(driver_data->mem2mem_fd, VIDIOC_S_EXT_CTRLS, &extCtrls)==0);
-
-			assert(ioctl(driver_data->mem2mem_fd, VIDIOC_QBUF, &buf)==0);
-		} else if(obj_buffer->type == VAPictureParameterBufferType) {
-			VAPictureParameterBufferMPEG2 *pic_param = (VAPictureParameterBufferMPEG2 *)obj_buffer->buffer_data;
-
-			obj_context->frame_hdr.width = pic_param->horizontal_size;
-			obj_context->frame_hdr.height = pic_param->vertical_size;
-
-			obj_context->frame_hdr.picture_coding_type = pic_param->picture_coding_type;
-			obj_context->frame_hdr.f_code[0][0] = (pic_param->f_code >> 12) & 0xf;
-			obj_context->frame_hdr.f_code[0][1] = (pic_param->f_code >>  8) & 0xf;
-			obj_context->frame_hdr.f_code[1][0] = (pic_param->f_code >>  4) & 0xf;
-			obj_context->frame_hdr.f_code[1][1] = pic_param->f_code & 0xf;
-
-			obj_context->frame_hdr.intra_dc_precision = pic_param->picture_coding_extension.bits.intra_dc_precision;
-			obj_context->frame_hdr.picture_structure = pic_param->picture_coding_extension.bits.picture_structure;
-			obj_context->frame_hdr.top_field_first = pic_param->picture_coding_extension.bits.top_field_first;
-			obj_context->frame_hdr.frame_pred_frame_dct = pic_param->picture_coding_extension.bits.frame_pred_frame_dct;
-			obj_context->frame_hdr.concealment_motion_vectors = pic_param->picture_coding_extension.bits.concealment_motion_vectors;
-			obj_context->frame_hdr.q_scale_type = pic_param->picture_coding_extension.bits.q_scale_type;
-			obj_context->frame_hdr.intra_vlc_format = pic_param->picture_coding_extension.bits.intra_vlc_format;
-			obj_context->frame_hdr.alternate_scan = pic_param->picture_coding_extension.bits.alternate_scan;
-
-			object_surface_p fwd_surface = SURFACE(pic_param->forward_reference_picture);
-			if(fwd_surface)
-				obj_context->frame_hdr.forward_index = fwd_surface->output_buf_index;
-			else
-				obj_context->frame_hdr.forward_index = obj_surface->output_buf_index;
-			object_surface_p bwd_surface = SURFACE(pic_param->backward_reference_picture);
-			if(bwd_surface)
-				obj_context->frame_hdr.backward_index = bwd_surface->output_buf_index;
-			else
-				obj_context->frame_hdr.backward_index = obj_surface->output_buf_index;
+		switch(obj_config->profile) {
+			case VAProfileMPEG2Simple:
+			case VAProfileMPEG2Main:
+				if(obj_buffer->type == VASliceDataBufferType)
+					vaStatus = sunxi_cedrus_render_mpeg2_slice_data(ctx, obj_context, obj_surface, obj_buffer);
+				else if(obj_buffer->type == VAPictureParameterBufferType)
+					vaStatus = sunxi_cedrus_render_mpeg2_picture_parameter(ctx, obj_context, obj_surface, obj_buffer);
+				break;
+			case VAProfileMPEG4Simple:
+			case VAProfileMPEG4AdvancedSimple:
+			case VAProfileMPEG4Main:
+				if(obj_buffer->type == VASliceDataBufferType)
+					vaStatus = sunxi_cedrus_render_mpeg4_slice_data(ctx, obj_context, obj_surface, obj_buffer);
+				else if(obj_buffer->type == VAPictureParameterBufferType)
+					vaStatus = sunxi_cedrus_render_mpeg4_picture_parameter(ctx, obj_context, obj_surface, obj_buffer);
+				break;
+			default:
+				break;
 		}
+
 	}
 
 	return vaStatus;
@@ -917,7 +1047,6 @@ VAStatus sunxi_cedrus_PutSurface(VADriverContextP ctx, VASurfaceID surface,
 	return VA_STATUS_SUCCESS;
 }
 
-/* sunxi-cedrus doesn't support Images */
 VAStatus sunxi_cedrus_QueryImageFormats(VADriverContextP ctx,
 		VAImageFormat *format_list, int *num_formats)
 { 
@@ -982,6 +1111,7 @@ VAStatus sunxi_cedrus_DeriveImage(VADriverContextP ctx, VASurfaceID surface,
 	if (NULL == obj_buffer)
 		return VA_STATUS_ERROR_ALLOCATION_FAILED;
 
+	/* TODO: move to kernel side */
 	tiled_to_planar(driver_data->luma_bufs[obj_surface->output_buf_index], obj_buffer->buffer_data, image->pitches[0], image->width, image->height);
 	tiled_to_planar(driver_data->chroma_bufs[obj_surface->output_buf_index], obj_buffer->buffer_data + image->width*image->height, image->pitches[1], image->width, image->height/2);
 
