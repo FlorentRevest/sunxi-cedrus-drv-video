@@ -818,8 +818,8 @@ VAStatus sunxi_cedrus_render_mpeg4_slice_data(VADriverContextP ctx, object_conte
 	buf.m.planes[0].bytesused = obj_buffer->size;
 	buf.request = obj_surface->request;
 
-/*	obj_context->mpeg4_frame_hdr.slice_pos = 0;
-	obj_context->mpeg4_frame_hdr.slice_len = obj_buffer->size; */
+	obj_context->mpeg4_frame_hdr.slice_pos = 0;
+	obj_context->mpeg4_frame_hdr.slice_len = obj_buffer->size;
 
 	struct v4l2_ext_control ctrl;
 	struct v4l2_ext_controls extCtrls;
@@ -847,6 +847,44 @@ VAStatus sunxi_cedrus_render_mpeg4_picture_parameter(VADriverContextP ctx, objec
 
 	VAPictureParameterBufferMPEG4 *pic_param = (VAPictureParameterBufferMPEG4 *)obj_buffer->buffer_data;
 
+	obj_context->mpeg4_frame_hdr.width = pic_param->vop_width;
+	obj_context->mpeg4_frame_hdr.height = pic_param->vop_height;
+
+	obj_context->mpeg4_frame_hdr.vol_fields.short_video_header = pic_param->vol_fields.bits.short_video_header;
+	obj_context->mpeg4_frame_hdr.vol_fields.chroma_format = pic_param->vol_fields.bits.chroma_format;
+	obj_context->mpeg4_frame_hdr.vol_fields.interlaced = pic_param->vol_fields.bits.interlaced;
+	obj_context->mpeg4_frame_hdr.vol_fields.obmc_disable = pic_param->vol_fields.bits.obmc_disable;
+	obj_context->mpeg4_frame_hdr.vol_fields.sprite_enable = pic_param->vol_fields.bits.sprite_enable;
+	obj_context->mpeg4_frame_hdr.vol_fields.sprite_warping_accuracy = pic_param->vol_fields.bits.sprite_warping_accuracy;
+	obj_context->mpeg4_frame_hdr.vol_fields.quant_type = pic_param->vol_fields.bits.quant_type;
+	obj_context->mpeg4_frame_hdr.vol_fields.quarter_sample = pic_param->vol_fields.bits.quarter_sample;
+	obj_context->mpeg4_frame_hdr.vol_fields.data_partitioned = pic_param->vol_fields.bits.data_partitioned;
+	obj_context->mpeg4_frame_hdr.vol_fields.reversible_vlc = pic_param->vol_fields.bits.reversible_vlc;
+	obj_context->mpeg4_frame_hdr.vol_fields.resync_marker_disable = pic_param->vol_fields.bits.resync_marker_disable;
+
+	obj_context->mpeg4_frame_hdr.vop_fields.vop_coding_type = pic_param->vop_fields.bits.vop_coding_type;
+	obj_context->mpeg4_frame_hdr.vop_fields.backward_reference_vop_coding_type = pic_param->vop_fields.bits.backward_reference_vop_coding_type;
+	obj_context->mpeg4_frame_hdr.vop_fields.vop_rounding_type = pic_param->vop_fields.bits.vop_rounding_type;
+	obj_context->mpeg4_frame_hdr.vop_fields.intra_dc_vlc_thr = pic_param->vop_fields.bits.intra_dc_vlc_thr;
+	obj_context->mpeg4_frame_hdr.vop_fields.top_field_first = pic_param->vop_fields.bits.top_field_first;
+	obj_context->mpeg4_frame_hdr.vop_fields.alternate_vertical_scan_flag = pic_param->vop_fields.bits.alternate_vertical_scan_flag;
+
+	obj_context->mpeg4_frame_hdr.vop_fcode_forward = pic_param->vop_fcode_forward;
+	obj_context->mpeg4_frame_hdr.vop_fcode_backward = pic_param->vop_fcode_backward;
+
+	obj_context->mpeg4_frame_hdr.trb = pic_param->TRB;
+	obj_context->mpeg4_frame_hdr.trd = pic_param->TRD;
+
+	object_surface_p fwd_surface = SURFACE(pic_param->forward_reference_picture);
+	if(fwd_surface)
+		obj_context->mpeg4_frame_hdr.forward_index = fwd_surface->output_buf_index;
+	else
+		obj_context->mpeg4_frame_hdr.forward_index = obj_surface->output_buf_index;
+	object_surface_p bwd_surface = SURFACE(pic_param->backward_reference_picture);
+	if(bwd_surface)
+		obj_context->mpeg4_frame_hdr.backward_index = bwd_surface->output_buf_index;
+	else
+		obj_context->mpeg4_frame_hdr.backward_index = obj_surface->output_buf_index;
 
 	return vaStatus;
 }
