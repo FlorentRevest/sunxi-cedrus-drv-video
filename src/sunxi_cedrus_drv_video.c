@@ -446,32 +446,34 @@ VAStatus sunxi_cedrus_CreateContext(VADriverContextP ctx, VAConfigID config_id,
 		object_heap_free(&driver_data->context_heap, (object_base_p) obj_context);
 	}
 
+	memset(&(fmt), 0, sizeof(fmt));
+	fmt.type = V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE;
+	fmt.fmt.pix_mp.width = picture_width;
+	fmt.fmt.pix_mp.height = picture_height;
+	fmt.fmt.pix_mp.plane_fmt[0].sizeimage = INPUT_BUFFER_MAX_SIZE;
 	switch(obj_config->profile) {
 		case VAProfileMPEG2Simple:
 		case VAProfileMPEG2Main:
-			memset(&(fmt), 0, sizeof(fmt));
-			fmt.type = V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE;
-			fmt.fmt.pix_mp.plane_fmt[0].sizeimage = INPUT_BUFFER_MAX_SIZE;
 			fmt.fmt.pix_mp.pixelformat = V4L2_PIX_FMT_MPEG2_FRAME;
-			fmt.fmt.pix_mp.field = V4L2_FIELD_ANY;
-			fmt.fmt.pix_mp.num_planes = 1;
-			assert(ioctl(driver_data->mem2mem_fd, VIDIOC_S_FMT, &fmt)==0);
 			break;
 		case VAProfileMPEG4Simple:
 		case VAProfileMPEG4AdvancedSimple:
 		case VAProfileMPEG4Main:
-			memset(&(fmt), 0, sizeof(fmt));
-			fmt.type = V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE;
-			fmt.fmt.pix_mp.plane_fmt[0].sizeimage = INPUT_BUFFER_MAX_SIZE;
 			fmt.fmt.pix_mp.pixelformat = V4L2_PIX_FMT_MPEG4_FRAME;
-			fmt.fmt.pix_mp.field = V4L2_FIELD_ANY;
-			fmt.fmt.pix_mp.num_planes = 1;
-			assert(ioctl(driver_data->mem2mem_fd, VIDIOC_S_FMT, &fmt)==0);
+			break;
+		case VAProfileH264Baseline:
+		case VAProfileH264Main:
+		case VAProfileH264High:
+			fmt.fmt.pix_mp.pixelformat = V4L2_PIX_FMT_H264_FRAME;
 			break;
 		default:
 			vaStatus = VA_STATUS_ERROR_UNSUPPORTED_PROFILE;
+			return vaStatus;
 			break;
 	}
+	fmt.fmt.pix_mp.field = V4L2_FIELD_ANY;
+	fmt.fmt.pix_mp.num_planes = 1;
+	assert(ioctl(driver_data->mem2mem_fd, VIDIOC_S_FMT, &fmt)==0);
 
 	memset (&create_bufs, 0, sizeof (struct v4l2_create_buffers));
 	create_bufs.count = INPUT_BUFFERS_NUMBER;
