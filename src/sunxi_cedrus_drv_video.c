@@ -305,8 +305,9 @@ VAStatus sunxi_cedrus_CreateSurfaces(VADriverContextP ctx, int width,
 	create_bufs.format.type = V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE;
 	assert(ioctl(driver_data->mem2mem_fd, VIDIOC_G_FMT, &create_bufs.format)==0);
 	assert(ioctl(driver_data->mem2mem_fd, VIDIOC_CREATE_BUFS, &create_bufs)==0);
+	driver_data->num_dst_bufs = create_bufs.count;
 
-	for (i = 0; i < num_surfaces; i++)
+	for (i = 0; i < create_bufs.count; i++)
 	{
 		int surfaceID = object_heap_allocate(&driver_data->surface_heap);
 		object_surface_p obj_surface = SURFACE(surfaceID);
@@ -682,7 +683,7 @@ VAStatus sunxi_cedrus_BeginPicture(VADriverContextP ctx, VAContextID context,
 	obj_surface->status = VASurfaceRendering;
 	obj_surface->request = (obj_context->num_rendered_surfaces)%INPUT_BUFFERS_NUMBER+1;
 	obj_surface->input_buf_index = obj_context->num_rendered_surfaces%INPUT_BUFFERS_NUMBER;
-	obj_surface->output_buf_index = obj_context->num_rendered_surfaces%4;
+	obj_surface->output_buf_index = obj_context->num_rendered_surfaces%driver_data->num_dst_bufs;
 	obj_context->num_rendered_surfaces ++;
 
 	obj_context->current_render_target = obj_surface->base.id;

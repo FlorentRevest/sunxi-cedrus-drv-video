@@ -45,6 +45,7 @@ struct sunxi_cedrus_driver_data {
 	struct object_heap	image_heap;
 	char                   *luma_bufs[VIDEO_MAX_FRAME];
 	char                   *chroma_bufs[VIDEO_MAX_FRAME];
+	unsigned int		num_dst_bufs;
 	int			mem2mem_fd;
 };
 
