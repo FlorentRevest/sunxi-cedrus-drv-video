@@ -821,9 +821,6 @@ VAStatus sunxi_cedrus_render_mpeg4_slice_data(VADriverContextP ctx, object_conte
 	buf.m.planes[0].bytesused = obj_buffer->size;
 	buf.request = obj_surface->request;
 
-	obj_context->mpeg4_frame_hdr.slice_pos = 0;
-	obj_context->mpeg4_frame_hdr.slice_len = obj_buffer->size;
-
 	struct v4l2_ext_control ctrl;
 	struct v4l2_ext_controls extCtrls;
 
@@ -865,6 +862,8 @@ VAStatus sunxi_cedrus_render_mpeg4_picture_parameter(VADriverContextP ctx, objec
 	obj_context->mpeg4_frame_hdr.vol_fields.reversible_vlc = pic_param->vol_fields.bits.reversible_vlc;
 	obj_context->mpeg4_frame_hdr.vol_fields.resync_marker_disable = pic_param->vol_fields.bits.resync_marker_disable;
 
+	obj_context->mpeg4_frame_hdr.quant_precision = pic_param->quant_precision;
+
 	obj_context->mpeg4_frame_hdr.vop_fields.vop_coding_type = pic_param->vop_fields.bits.vop_coding_type;
 	obj_context->mpeg4_frame_hdr.vop_fields.backward_reference_vop_coding_type = pic_param->vop_fields.bits.backward_reference_vop_coding_type;
 	obj_context->mpeg4_frame_hdr.vop_fields.vop_rounding_type = pic_param->vop_fields.bits.vop_rounding_type;
@@ -890,6 +889,17 @@ VAStatus sunxi_cedrus_render_mpeg4_picture_parameter(VADriverContextP ctx, objec
 		obj_context->mpeg4_frame_hdr.backward_index = obj_surface->output_buf_index;
 
 	return vaStatus;
+}
+
+VAStatus sunxi_cedrus_render_mpeg4_slice_parameter(VADriverContextP ctx, object_context_p obj_context, 
+		object_surface_p obj_surface, object_buffer_p obj_buffer)
+{
+	VASliceParameterBufferMPEG4 *slice_param = (VASliceParameterBufferMPEG4 *)obj_buffer->buffer_data;
+
+	obj_context->mpeg4_frame_hdr.slice_pos = slice_param->slice_data_offset;
+	obj_context->mpeg4_frame_hdr.slice_len = slice_param->slice_data_size;
+
+	return VA_STATUS_SUCCESS;
 }
 
 VAStatus sunxi_cedrus_RenderPicture(VADriverContextP ctx, VAContextID context,
@@ -941,11 +951,12 @@ VAStatus sunxi_cedrus_RenderPicture(VADriverContextP ctx, VAContextID context,
 					vaStatus = sunxi_cedrus_render_mpeg4_slice_data(ctx, obj_context, obj_surface, obj_buffer);
 				else if(obj_buffer->type == VAPictureParameterBufferType)
 					vaStatus = sunxi_cedrus_render_mpeg4_picture_parameter(ctx, obj_context, obj_surface, obj_buffer);
+				else if(obj_buffer->type == VASliceParameterBufferType)
+					vaStatus = sunxi_cedrus_render_mpeg4_slice_parameter(ctx, obj_context, obj_surface, obj_buffer);
 				break;
 			default:
 				break;
 		}
-
 	}
 
 	return vaStatus;
