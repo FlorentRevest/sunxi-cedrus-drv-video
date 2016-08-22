@@ -358,13 +358,11 @@ VAStatus sunxi_cedrus_CreateSurfaces(VADriverContextP ctx, int width,
 		assert(driver_data->chroma_bufs[buf.index] != MAP_FAILED);
 
 		obj_surface->input_buf_index = 0;
-		obj_surface->output_buf_index = 0;
+		obj_surface->output_buf_index = create_bufs.index + i;
 
 		obj_surface->width = width;
 		obj_surface->height = height;
 		obj_surface->status = VASurfaceReady;
-
-		assert(ioctl(driver_data->mem2mem_fd, VIDIOC_QBUF, &buf)==0);
 	}
 
 	/* Error recovery */
@@ -379,7 +377,6 @@ VAStatus sunxi_cedrus_CreateSurfaces(VADriverContextP ctx, int width,
 			object_heap_free(&driver_data->surface_heap, (object_base_p) obj_surface);
 		}
 	}
-
 	return vaStatus;
 }
 
@@ -702,7 +699,6 @@ VAStatus sunxi_cedrus_BeginPicture(VADriverContextP ctx, VAContextID context,
 	obj_surface->status = VASurfaceRendering;
 	obj_surface->request = (obj_context->num_rendered_surfaces)%INPUT_BUFFERS_NUMBER+1;
 	obj_surface->input_buf_index = obj_context->num_rendered_surfaces%INPUT_BUFFERS_NUMBER;
-	obj_surface->output_buf_index = obj_context->num_rendered_surfaces%driver_data->num_dst_bufs;
 	obj_context->num_rendered_surfaces ++;
 
 	obj_context->current_render_target = obj_surface->base.id;
@@ -959,8 +955,9 @@ VAStatus sunxi_cedrus_EndPicture(VADriverContextP ctx, VAContextID context)
 	object_context_p obj_context;
 	object_surface_p obj_surface;
 	enum v4l2_buf_type type;
-	struct v4l2_buffer buf;
+	struct v4l2_buffer out_buf, cap_buf;
 	struct v4l2_plane plane[1];
+	struct v4l2_plane planes[2];
 	struct v4l2_ext_control ctrl;
 	struct v4l2_ext_controls extCtrls;
 	object_config_p obj_config;
@@ -978,18 +975,18 @@ VAStatus sunxi_cedrus_EndPicture(VADriverContextP ctx, VAContextID context)
 		return vaStatus;
 	}
 
-	memset(&(buf), 0, sizeof(buf));
-	buf.type = V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE;
-	buf.memory = V4L2_MEMORY_MMAP;
-	buf.index = obj_surface->input_buf_index;
-	buf.length = 1;
-	buf.m.planes = plane;
-	buf.request = obj_surface->request;
+	memset(&(out_buf), 0, sizeof(out_buf));
+	out_buf.type = V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE;
+	out_buf.memory = V4L2_MEMORY_MMAP;
+	out_buf.index = obj_surface->input_buf_index;
+	out_buf.length = 1;
+	out_buf.m.planes = plane;
+	out_buf.request = obj_surface->request;
 
 	switch(obj_config->profile) {
 		case VAProfileMPEG2Simple:
 		case VAProfileMPEG2Main:
-			buf.m.planes[0].bytesused = obj_context->mpeg2_frame_hdr.slice_len/8;
+			out_buf.m.planes[0].bytesused = obj_context->mpeg2_frame_hdr.slice_len/8;
 			ctrl.id = V4L2_CID_MPEG_VIDEO_MPEG2_FRAME_HDR;
 			ctrl.ptr = &obj_context->mpeg2_frame_hdr;
 			ctrl.size = sizeof(obj_context->mpeg2_frame_hdr);
@@ -997,7 +994,7 @@ VAStatus sunxi_cedrus_EndPicture(VADriverContextP ctx, VAContextID context)
 		case VAProfileMPEG4Simple:
 		case VAProfileMPEG4AdvancedSimple:
 		case VAProfileMPEG4Main:
-			buf.m.planes[0].bytesused = obj_context->mpeg4_frame_hdr.slice_len/8;
+			out_buf.m.planes[0].bytesused = obj_context->mpeg4_frame_hdr.slice_len/8;
 			ctrl.id = V4L2_CID_MPEG_VIDEO_MPEG4_FRAME_HDR;
 			ctrl.ptr = &obj_context->mpeg4_frame_hdr;
 			ctrl.size = sizeof(obj_context->mpeg4_frame_hdr);
@@ -1006,12 +1003,31 @@ VAStatus sunxi_cedrus_EndPicture(VADriverContextP ctx, VAContextID context)
 			break;
 	}
 
+	memset(&(cap_buf), 0, sizeof(cap_buf));
+	cap_buf.type = V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE;
+	cap_buf.memory = V4L2_MEMORY_MMAP;
+	cap_buf.index = obj_surface->output_buf_index;
+	cap_buf.length = 2;
+	cap_buf.m.planes = planes;
+
+	assert(ioctl(driver_data->mem2mem_fd, VIDIOC_QUERYBUF, &cap_buf)==0);
+
 	extCtrls.controls = &ctrl;
 	extCtrls.count = 1;
 	extCtrls.request = obj_surface->request;
 	assert(ioctl(driver_data->mem2mem_fd, VIDIOC_S_EXT_CTRLS, &extCtrls)==0);
 
-	assert(ioctl(driver_data->mem2mem_fd, VIDIOC_QBUF, &buf)==0);
+	if(ioctl(driver_data->mem2mem_fd, VIDIOC_QBUF, &cap_buf)) {
+		obj_surface->status = VASurfaceSkipped;
+		sunxi_cedrus_msg("Error when queuing output: %s\n", strerror(errno));
+		return VA_STATUS_ERROR_UNKNOWN;
+	}
+	if(ioctl(driver_data->mem2mem_fd, VIDIOC_QBUF, &out_buf)) {
+		obj_surface->status = VASurfaceSkipped;
+		sunxi_cedrus_msg("Error when queuing input: %s\n", strerror(errno));
+		ioctl(driver_data->mem2mem_fd, VIDIOC_DQBUF, &cap_buf);
+		return VA_STATUS_ERROR_UNKNOWN;
+	}
 
 	/* For now, assume that we are done with rendering right away */
 	obj_context->current_render_target = -1;
@@ -1048,8 +1064,10 @@ VAStatus sunxi_cedrus_SyncSurface(VADriverContextP ctx,
 	buf.length = 1;
 	buf.m.planes = plane;
 
-	if(ioctl(driver_data->mem2mem_fd, VIDIOC_DQBUF, &buf))
+	if(ioctl(driver_data->mem2mem_fd, VIDIOC_DQBUF, &buf)) {
+		sunxi_cedrus_msg("Error when dequeuing input: %s\n", strerror(errno));
 		return VA_STATUS_ERROR_UNKNOWN;
+	}
 
 	memset(&(buf), 0, sizeof(buf));
 	struct v4l2_plane planes[2];
@@ -1061,11 +1079,10 @@ VAStatus sunxi_cedrus_SyncSurface(VADriverContextP ctx,
 
 	obj_surface->status = VASurfaceReady;
 
-	if(ioctl(driver_data->mem2mem_fd, VIDIOC_DQBUF, &buf))
+	if(ioctl(driver_data->mem2mem_fd, VIDIOC_DQBUF, &buf)) {
+		sunxi_cedrus_msg("Error when dequeuing output: %s\n", strerror(errno));
 		return VA_STATUS_ERROR_UNKNOWN;
-
-	if(ioctl(driver_data->mem2mem_fd, VIDIOC_QBUF, &buf))
-		return VA_STATUS_ERROR_UNKNOWN;
+	}
 
 	return VA_STATUS_SUCCESS;
 }
