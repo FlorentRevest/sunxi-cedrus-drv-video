@@ -77,16 +77,33 @@ static void sunxi_cedrus_msg(const char *msg, ...)
 VAStatus sunxi_cedrus_QueryConfigProfiles(VADriverContextP ctx,
 		VAProfile *profile_list, int *num_profiles)
 {
+	INIT_DRIVER_DATA
 	int i = 0;
+	struct v4l2_fmtdesc vid_fmtdesc;
+	memset(&vid_fmtdesc, 0, sizeof(vid_fmtdesc));
+	vid_fmtdesc.index = 0;
+	vid_fmtdesc.type = V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE;
 
-	profile_list[i++] = VAProfileMPEG2Simple;
-	profile_list[i++] = VAProfileMPEG2Main;
-	profile_list[i++] = VAProfileMPEG4Simple;
-	profile_list[i++] = VAProfileMPEG4AdvancedSimple;
-	profile_list[i++] = VAProfileMPEG4Main;
-	profile_list[i++] = VAProfileH264Baseline;
-	profile_list[i++] = VAProfileH264Main;
-	profile_list[i++] = VAProfileH264High;
+	while(ioctl(driver_data->mem2mem_fd, VIDIOC_ENUM_FMT, &vid_fmtdesc) == 0)
+	{
+		switch(vid_fmtdesc.pixelformat) {
+		case V4L2_PIX_FMT_MPEG2_FRAME:
+			profile_list[i++] = VAProfileMPEG2Simple;
+			profile_list[i++] = VAProfileMPEG2Main;
+			break;
+		case V4L2_PIX_FMT_MPEG4_FRAME:
+			profile_list[i++] = VAProfileMPEG4Simple;
+			profile_list[i++] = VAProfileMPEG4AdvancedSimple;
+			profile_list[i++] = VAProfileMPEG4Main;
+			break;
+		case V4L2_PIX_FMT_H264_FRAME:
+			profile_list[i++] = VAProfileH264Baseline;
+			profile_list[i++] = VAProfileH264Main;
+			profile_list[i++] = VAProfileH264High;
+			break;
+		}
+		vid_fmtdesc.index++;
+	}
 
 	assert(i <= SUNXI_CEDRUS_MAX_PROFILES);
 	*num_profiles = i;
