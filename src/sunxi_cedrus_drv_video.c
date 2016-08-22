@@ -405,6 +405,7 @@ VAStatus sunxi_cedrus_CreateContext(VADriverContextP ctx, VAConfigID config_id,
 	int i;
 	struct v4l2_create_buffers create_bufs;
 	struct v4l2_format fmt;
+	enum v4l2_buf_type type;
 
 	obj_config = CONFIG(config_id);
 	if (NULL == obj_config)
@@ -498,6 +499,12 @@ VAStatus sunxi_cedrus_CreateContext(VADriverContextP ctx, VAConfigID config_id,
 	create_bufs.format.type = V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE;
 	assert(ioctl(driver_data->mem2mem_fd, VIDIOC_G_FMT, &create_bufs.format)==0);
 	assert(ioctl(driver_data->mem2mem_fd, VIDIOC_CREATE_BUFS, &create_bufs)==0);
+
+	type = V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE;
+	assert(ioctl(driver_data->mem2mem_fd, VIDIOC_STREAMON, &type)==0);
+
+	type = V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE;
+	assert(ioctl(driver_data->mem2mem_fd, VIDIOC_STREAMON, &type)==0);
 
 	return vaStatus;
 }
@@ -954,7 +961,6 @@ VAStatus sunxi_cedrus_EndPicture(VADriverContextP ctx, VAContextID context)
 	VAStatus vaStatus = VA_STATUS_SUCCESS;
 	object_context_p obj_context;
 	object_surface_p obj_surface;
-	enum v4l2_buf_type type;
 	struct v4l2_buffer out_buf, cap_buf;
 	struct v4l2_plane plane[1];
 	struct v4l2_plane planes[2];
@@ -1031,12 +1037,6 @@ VAStatus sunxi_cedrus_EndPicture(VADriverContextP ctx, VAContextID context)
 
 	/* For now, assume that we are done with rendering right away */
 	obj_context->current_render_target = -1;
-
-	type = V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE;
-	assert(ioctl(driver_data->mem2mem_fd, VIDIOC_STREAMON, &type)==0);
-
-	type = V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE;
-	assert(ioctl(driver_data->mem2mem_fd, VIDIOC_STREAMON, &type)==0);
 
 	return vaStatus;
 }
