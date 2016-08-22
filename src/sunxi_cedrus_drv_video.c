@@ -1049,13 +1049,17 @@ VAStatus sunxi_cedrus_SyncSurface(VADriverContextP ctx,
 	struct v4l2_buffer buf;
 	struct v4l2_plane plane[1];
         fd_set read_fds;
-
-        FD_ZERO(&read_fds);
-        FD_SET(driver_data->mem2mem_fd, &read_fds);
-        select(driver_data->mem2mem_fd + 1, &read_fds, NULL, NULL, 0);
+	struct timeval tv = {0, 300000};
 
 	obj_surface = SURFACE(render_target);
 	assert(obj_surface);
+
+	FD_ZERO(&read_fds);
+	FD_SET(driver_data->mem2mem_fd, &read_fds);
+	if(obj_surface->status != VASurfaceSkipped)
+		select(driver_data->mem2mem_fd + 1, &read_fds, NULL, NULL, &tv);
+	else
+		return VA_STATUS_ERROR_UNKNOWN;
 
 	memset(&(buf), 0, sizeof(buf));
 	buf.type = V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE;
