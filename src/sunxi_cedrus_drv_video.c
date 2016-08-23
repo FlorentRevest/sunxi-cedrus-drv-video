@@ -330,7 +330,7 @@ VAStatus sunxi_cedrus_CreateSurfaces(VADriverContextP ctx, int width,
 	fmt.type = V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE;
 	fmt.fmt.pix_mp.width = width;
 	fmt.fmt.pix_mp.height = height;
-	fmt.fmt.pix_mp.pixelformat = V4L2_PIX_FMT_NV12M;
+	fmt.fmt.pix_mp.pixelformat = V4L2_PIX_FMT_SUNXI;
 	fmt.fmt.pix_mp.field = V4L2_FIELD_ANY;
 	fmt.fmt.pix_mp.num_planes = 2;
 	assert(ioctl(driver_data->mem2mem_fd, VIDIOC_S_FMT, &fmt)==0);
