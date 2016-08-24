@@ -96,11 +96,6 @@ VAStatus sunxi_cedrus_QueryConfigProfiles(VADriverContextP ctx,
 			profile_list[i++] = VAProfileMPEG4AdvancedSimple;
 			profile_list[i++] = VAProfileMPEG4Main;
 			break;
-		case V4L2_PIX_FMT_H264_FRAME:
-			profile_list[i++] = VAProfileH264Baseline;
-			profile_list[i++] = VAProfileH264Main;
-			profile_list[i++] = VAProfileH264High;
-			break;
 		}
 		vid_fmtdesc.index++;
 	}
@@ -126,13 +121,6 @@ VAStatus sunxi_cedrus_QueryConfigEntrypoints(VADriverContextP ctx,
 		case VAProfileMPEG4Simple:
 		case VAProfileMPEG4AdvancedSimple:
 		case VAProfileMPEG4Main:
-			*num_entrypoints = 1;
-			entrypoint_list[0] = VAEntrypointVLD;
-			break;
-
-		case VAProfileH264Baseline:
-		case VAProfileH264Main:
-		case VAProfileH264High:
 			*num_entrypoints = 1;
 			entrypoint_list[0] = VAEntrypointVLD;
 			break;
@@ -218,15 +206,6 @@ VAStatus sunxi_cedrus_CreateConfig(VADriverContextP ctx, VAProfile profile,
 		case VAProfileMPEG4Simple:
 		case VAProfileMPEG4AdvancedSimple:
 		case VAProfileMPEG4Main:
-			if (VAEntrypointVLD == entrypoint)
-				vaStatus = VA_STATUS_SUCCESS;
-			else
-				vaStatus = VA_STATUS_ERROR_UNSUPPORTED_ENTRYPOINT;
-			break;
-
-		case VAProfileH264Baseline:
-		case VAProfileH264Main:
-		case VAProfileH264High:
 			if (VAEntrypointVLD == entrypoint)
 				vaStatus = VA_STATUS_SUCCESS;
 			else
@@ -495,11 +474,6 @@ VAStatus sunxi_cedrus_CreateContext(VADriverContextP ctx, VAConfigID config_id,
 		case VAProfileMPEG4AdvancedSimple:
 		case VAProfileMPEG4Main:
 			fmt.fmt.pix_mp.pixelformat = V4L2_PIX_FMT_MPEG4_FRAME;
-			break;
-		case VAProfileH264Baseline:
-		case VAProfileH264Main:
-		case VAProfileH264High:
-			fmt.fmt.pix_mp.pixelformat = V4L2_PIX_FMT_H264_FRAME;
 			break;
 		default:
 			vaStatus = VA_STATUS_ERROR_UNSUPPORTED_PROFILE;
@@ -957,13 +931,6 @@ VAStatus sunxi_cedrus_RenderPicture(VADriverContextP ctx, VAContextID context,
 				else if(obj_buffer->type == VASliceParameterBufferType)
 					vaStatus = sunxi_cedrus_render_mpeg4_slice_parameter(ctx, obj_context, obj_surface, obj_buffer);
 				break;
-			case VAProfileH264Baseline:
-			case VAProfileH264Main:
-			case VAProfileH264High:
-				if(obj_buffer->type == VASliceDataBufferType)
-					vaStatus = sunxi_cedrus_render_h264_slice_data(ctx, obj_context, obj_surface, obj_buffer);
-				else if(obj_buffer->type == VAPictureParameterBufferType)
-					vaStatus = sunxi_cedrus_render_h264_picture_parameter(ctx, obj_context, obj_surface, obj_buffer);
 			default:
 				break;
 		}
